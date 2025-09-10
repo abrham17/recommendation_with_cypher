@@ -64,6 +64,7 @@ class RealTimeTracker:
         self.driver = driver
         self.database = database
         self.logger = logging.getLogger(__name__)
+        self.app_start_time = datetime.now()
         
         # In-memory storage for real-time analytics
         self.recent_interactions = deque(maxlen=10000)  # Last 10k interactions
@@ -501,7 +502,7 @@ class RealTimeTracker:
             'recent_interactions_count': len(self.recent_interactions),
             'active_sessions_count': len(self.user_sessions),
             'cache_hit_ratio': self._calculate_cache_hit_ratio(),
-            'system_uptime': (current_time - datetime.now()).total_seconds(),  # Placeholder
+            'system_uptime': (current_time - self.app_start_time).total_seconds(),
             'interactions_per_second': self._calculate_interactions_per_second(),
         }
     

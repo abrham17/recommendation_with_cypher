@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>User Behavior Analysis - Neo4j Movies</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .behavior-card {
+            border: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .engagement-score {
+            font-size: 3rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .genre-bar {
+            height: 20px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 10px;
+            margin: 5px 0;
+        }
+        .activity-heatmap {
+            display: grid;
+            grid-template-columns: repeat(24, 1fr);
+            gap: 2px;
+            margin: 10px 0;
+        }
+        .hour-cell {
+            aspect-ratio: 1;
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: white;
+        }
+        .header-gradient {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 0;
+            margin-bottom: 30px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="header-gradient">
+        <div class="container text-center">
+            <h1>🧠 Your Behavior Analysis</h1>
+            <p class="lead">Insights into your movie watching patterns and preferences</p>
+            {% if user %}
+                <p>Analysis for {{ user.name }}</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="container">
+        <div id="loading" class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Analyzing your behavior patterns...</p>
+        </div>
+        
+        <div id="analysis-content" style="display: none;">
+            <!-- Engagement Score -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card behavior-card text-center">
+                        <div class="card-body">
+                            <h5>Your Engagement Score</h5>
+                            <div class="engagement-score" id="engagement-score">-</div>
+                            <p class="text-muted">Based on your interaction patterns and activity level</p>
+                            <div class="progress" style="height: 10px;">
+                                <div class="progress-bar" id="engagement-progress" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Statistics Row -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card behavior-card text-center">
+                        <div class="card-body">
+                            <h3 class="text-primary" id="total-interactions">-</h3>
+                            <p class="mb-0">Total Interactions</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card behavior-card text-center">
+                        <div class="card-body">
+                            <h3 class="text-success" id="most-active-hour">-</h3>
+                            <p class="mb-0">Most Active Hour</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card behavior-card text-center">
+                        <div class="card-body">
+                            <h3 class="text-warning" id="recommendation-ctr">-</h3>
+                            <p class="mb-0">Recommendation CTR</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card behavior-card text-center">
+                        <div class="card-body">
+                            <h3 class="text-info" id="favorite-genre">-</h3>
+                            <p class="mb-0">Top Genre</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Charts Row -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card behavior-card">
+                        <div class="card-header">
+                            <h5>Interaction Types Distribution</h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="interaction-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card behavior-card">
+                        <div class="card-header">
+                            <h5>Activity by Day of Week</h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="daily-activity-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Genre Preferences and Activity Heatmap -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card behavior-card">
+                        <div class="card-header">
+                            <h5>Genre Preferences</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="genre-preferences">
+                                <p class="text-muted">Loading genre data...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card behavior-card">
+                        <div class="card-header">
+                            <h5>Hourly Activity Heatmap</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="activity-heatmap" id="activity-heatmap"></div>
+                            <small class="text-muted">Darker colors indicate higher activity</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Most Viewed Movies -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card behavior-card">
+                        <div class="card-header">
+                            <h5>Your Most Viewed Movies</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="most-viewed-movies">
+                                <p class="text-muted">Loading movie data...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recommendation Effectiveness -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card behavior-card">
+                        <div class="card-header">
+                            <h5>Recommendation System Effectiveness</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="recommendation-effectiveness">
+                                <p class="text-muted">Analyzing recommendation performance...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="text-center mt-4 mb-4">
+            <a href="/analytics/dashboard" class="btn btn-primary me-2">View System Analytics</a>
+            <a href="/profile" class="btn btn-outline-secondary">Back to Profile</a>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let interactionChart;
+        let dailyActivityChart;
+        
+        async function loadUserBehaviorAnalysis() {
+            try {
+                const userId = '{{ user.userId if user else "" }}';
+                const response = await fetch(`/api/analytics/user/${userId}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Hide loading and show content
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('analysis-content').style.display = 'block';
+                
+                // Update engagement score
+                const engagementScore = data.engagement_score || 0;
+                document.getElementById('engagement-score').textContent = engagementScore.toFixed(1);
+                document.getElementById('engagement-progress').style.width = `${(engagementScore / 10) * 100}%`;
+                
+                // Update statistics
+                document.getElementById('total-interactions').textContent = data.total_interactions || 0;
+                document.getElementById('most-active-hour').textContent = 
+                    data.activity_patterns?.most_active_hour ? `${data.activity_patterns.most_active_hour}:00` : 'N/A';
+                document.getElementById('recommendation-ctr').textContent = 
+                    data.recommendation_effectiveness?.click_through_rate ? 
+                    `${data.recommendation_effectiveness.click_through_rate.toFixed(1)}%` : 'N/A';
+                document.getElementById('favorite-genre').textContent = 
+                    data.movie_preferences?.preferred_genres?.[0]?.genre || 'N/A';
+                
+                // Create charts
+                createInteractionChart(data.interaction_types);
+                createDailyActivityChart(data.activity_patterns?.daily_distribution);
+                
+                // Update genre preferences
+                updateGenrePreferences(data.movie_preferences?.preferred_genres);
+                
+                // Update activity heatmap
+                updateActivityHeatmap(data.activity_patterns?.hourly_distribution);
+                
+                // Update most viewed movies
+                updateMostViewedMovies(data.movie_preferences?.most_viewed_movies);
+                
+                // Update recommendation effectiveness
+                updateRecommendationEffectiveness(data.recommendation_effectiveness);
+                
+            } catch (error) {
+                console.error('Error loading user behavior analysis:', error);
+                document.getElementById('loading').innerHTML = `
+                    <div class="alert alert-danger">
+                        <h5>Error Loading Analysis</h5>
+                        <p>${error.message}</p>
+                        <a href="/profile" class="btn btn-secondary">Back to Profile</a>
+                    </div>
+                `;
+            }
+        }
+        
+        function createInteractionChart(interactionTypes) {
+            if (!interactionTypes) return;
+            
+            const ctx = document.getElementById('interaction-chart').getContext('2d');
+            const labels = Object.keys(interactionTypes.counts || {});
+            const data = Object.values(interactionTypes.counts || {});
+            
+            interactionChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            '#667eea', '#764ba2', '#f093fb', '#f5576c',
+                            '#4facfe', '#00f2fe', '#43e97b', '#38f9d7'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+        function createDailyActivityChart(dailyDistribution) {
+            if (!dailyDistribution) return;
+            
+            const ctx = document.getElementById('daily-activity-chart').getContext('2d');
+            const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            const data = days.map((_, index) => dailyDistribution[index] || 0);
+            
+            dailyActivityChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: days,
+                    datasets: [{
+                        label: 'Interactions',
+                        data: data,
+                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                        borderColor: '#667eea',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+        
+        function updateGenrePreferences(genres) {
+            const container = document.getElementById('genre-preferences');
+            
+            if (!genres || genres.length === 0) {
+                container.innerHTML = '<p class="text-muted">No genre preferences data available</p>';
+                return;
+            }
+            
+            const maxCount = Math.max(...genres.map(g => g.count));
+            
+            const html = genres.map(genre => `
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span>${genre.genre}</span>
+                        <span class="text-muted">${genre.count} movies (${genre.avg_rating.toFixed(1)}★)</span>
+                    </div>
+                    <div class="genre-bar" style="width: ${(genre.count / maxCount) * 100}%"></div>
+                </div>
+            `).join('');
+            
+            container.innerHTML = html;
+        }
+        
+        function updateActivityHeatmap(hourlyDistribution) {
+            const container = document.getElementById('activity-heatmap');
+            
+            if (!hourlyDistribution) {
+                container.innerHTML = '<p class="text-muted">No hourly activity data available</p>';
+                return;
+            }
+            
+            const maxActivity = Math.max(...Object.values(hourlyDistribution));
+            
+            let html = '';
+            for (let hour = 0; hour < 24; hour++) {
+                const activity = hourlyDistribution[hour] || 0;
+                const intensity = maxActivity > 0 ? activity / maxActivity : 0;
+                const opacity = 0.2 + (intensity * 0.8);
+                
+                html += `
+                    <div class="hour-cell" 
+                         style="background-color: rgba(102, 126, 234, ${opacity})"
+                         title="Hour ${hour}: ${activity} interactions">
+                        ${hour}
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function updateMostViewedMovies(movies) {
+            const container = document.getElementById('most-viewed-movies');
+            
+            if (!movies || movies.length === 0) {
+                container.innerHTML = '<p class="text-muted">No viewing history available</p>';
+                return;
+            }
+            
+            const html = `
+                <div class="row">
+                    ${movies.map((movie, index) => `
+                        <div class="col-md-6 mb-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>#${index + 1}</strong> ${movie.title}
+                                </div>
+                                <span class="badge bg-primary">${movie.view_count} views</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        function updateRecommendationEffectiveness(effectiveness) {
+            const container = document.getElementById('recommendation-effectiveness');
+            
+            if (!effectiveness) {
+                container.innerHTML = '<p class="text-muted">No recommendation data available</p>';
+                return;
+            }
+            
+            const ctr = effectiveness.click_through_rate || 0;
+            const rating = effectiveness.effectiveness_rating || 'Unknown';
+            
+            const html = `
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <h4 class="text-primary">${effectiveness.recommendation_views || 0}</h4>
+                        <p>Recommendations Viewed</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h4 class="text-success">${effectiveness.recommendation_clicks || 0}</h4>
+                        <p>Recommendations Clicked</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h4 class="text-warning">${ctr.toFixed(1)}%</h4>
+                        <p>Click-Through Rate</p>
+                    </div>
+                </div>
+                <div class="mt-3 text-center">
+                    <span class="badge bg-${rating === 'High' ? 'success' : rating === 'Medium' ? 'warning' : 'secondary'} fs-6">
+                        ${rating} Effectiveness
+                    </span>
+                    <p class="mt-2 text-muted">
+                        ${rating === 'High' ? 'Great! You engage well with our recommendations.' :
+                          rating === 'Medium' ? 'Good engagement. We\'re learning your preferences.' :
+                          'We\'re still learning your preferences. Rate more movies to improve recommendations.'}
+                    </p>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        // Load analysis on page load
+        document.addEventListener('DOMContentLoaded', loadUserBehaviorAnalysis);
+    </script>
+</body>
+</html>

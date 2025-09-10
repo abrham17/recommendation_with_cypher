@@ -19,15 +19,18 @@ from advanced_recommendation_engine import AdvancedHybridRecommendationEngine
 from real_time_tracker import RealTimeTracker, InteractionType
 load_dotenv()
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+# Support both SECRET_KEY and FLASK_SECRET_KEY, with a safe default for dev
+app.secret_key = os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET_KEY") or "dev-secret-key-change-me"
 
-url = os.getenv("NEO4J_URI")
-username = os.getenv("NEO4J_USERNAME")
-password = os.getenv("NEO4J_PASSWORD")
-neo4j_version = os.getenv("NEO4J_VERSION")
-database = os.getenv("NEO4J_DATABASE")
+# Provide sensible defaults so the app can run against the public demo DB
+url = os.getenv("NEO4J_URI", "neo4j+s://demo.neo4jlabs.com")
+username = os.getenv("NEO4J_USERNAME", "movies")
+password = os.getenv("NEO4J_PASSWORD", "movies")
+neo4j_version = os.getenv("NEO4J_VERSION", "5")
+database = os.getenv("NEO4J_DATABASE", "movies")
 
-port = int(os.getenv("PORT", 8080))
+# Default to 5000 for local dev consistency
+port = int(os.getenv("PORT", 5000))
 
 driver = GraphDatabase.driver(url, auth=basic_auth(username, password))
 
@@ -344,7 +347,7 @@ def get_search():
     try:
         q = request.args["q"]
     except KeyError:
-        return []
+        return Response(dumps([]), mimetype="application/json")
     else:
         records, _, _ = driver.execute_query(
             query("""
@@ -807,13 +810,13 @@ def rate_movie(title):
 
 def serialize_movie(movie):
     return {
-        "id": movie["id"],
-        "title": movie["title"],
-        "summary": movie["summary"],
-        "released": movie["released"],
-        "duration": movie["duration"],
-        "rated": movie["rated"],
-        "tagline": movie["tagline"],
+        "id": movie.get("id"),
+        "title": movie.get("title"),
+        "summary": movie.get("summary"),
+        "released": movie.get("released"),
+        "duration": movie.get("duration") or movie.get("runtime"),
+        "rated": movie.get("rated"),
+        "tagline": movie.get("tagline"),
         "votes": movie.get("votes", 0),
         "avgRating": movie.get("avgRating", 3.0),
         "ratingCount": movie.get("ratingCount", 0),

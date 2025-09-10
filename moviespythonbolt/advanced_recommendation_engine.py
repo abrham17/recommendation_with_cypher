@@ -541,3 +541,80 @@ class AdvancedHybridRecommendationEngine:
             explanations.append(f"Recommended by {len(methods)} different algorithms for higher confidence")
         
         return ". ".join(explanations) + "."
+
+    # --- Compatibility wrapper methods expected by Flask routes ---
+    def content_based_recommendations(self, movie_title: str, limit: int = 10) -> List[Dict]:
+        """Return movies similar to the given title using content similarity."""
+        if self.content_similarity_matrix is None or not getattr(self, 'movie_titles', None):
+            return []
+
+        if movie_title not in self.movie_titles:
+            return []
+
+        movie_index = self.movie_titles.index(movie_title)
+        similarities = self.content_similarity_matrix[movie_index]
+
+        scored = []
+        for idx, sim in enumerate(similarities):
+            title = self.movie_titles[idx]
+            if title == movie_title:
+                continue
+            scored.append({
+                'title': title,
+                'content_score': float(sim),
+                'method': 'content_based'
+            })
+
+        scored.sort(key=lambda x: x['content_score'], reverse=True)
+        return scored[:limit]
+
+    def collaborative_filtering_recommendations(self, user_id: str, limit: int = 10) -> List[Dict]:
+        """Bridge to advanced collaborative filtering with expected signature."""
+        return self.collaborative_filtering_advanced(user_id=user_id, n_recommendations=limit)
+
+    def hybrid_recommendations(self, user_id: Optional[str] = None, movie_title: Optional[str] = None, limit: int = 15) -> List[Dict]:
+        """Hybrid recommendations. If user_id provided, use ensemble; else fall back to content-based by title."""
+        try:
+            if user_id:
+                return self.ensemble_recommendations(user_id=user_id, context={}, n_recommendations=limit)
+            if movie_title:
+                return self.content_based_recommendations(movie_title=movie_title, limit=limit)
+            return []
+        except Exception as exc:
+            self.logger.error(f"Error generating hybrid recommendations: {exc}")
+            return []
+
+    def trending_recommendations(self, limit: int = 10) -> List[Dict]:
+        """Return trending movies using popularity and rating as proxies."""
+        try:
+            with self.driver.session(database=self.database) as session:
+                result = session.run(
+                    """
+                    MATCH (m:Movie)
+                    WITH m, coalesce(m.popularity, 0) AS pop, coalesce(m.avgRating, 0) AS rating
+                    RETURN m.title AS title, pop AS popularity, rating AS avgRating
+                    ORDER BY popularity DESC, avgRating DESC
+                    LIMIT $limit
+                    """,
+                    limit=limit
+                )
+                return [
+                    {
+                        'title': record['title'],
+                        'popularity': float(record['popularity'] or 0),
+                        'avg_rating': float(record['avgRating'] or 0),
+                        'method': 'trending'
+                    }
+                    for record in result
+                ]
+        except Exception as exc:
+            self.logger.error(f"Error fetching trending recommendations: {exc}")
+            return []
+
+    def personalized_recommendations(self, user_id: str, limit: int = 15) -> List[Dict]:
+        """Bridge method to ensemble recommendations for a given user."""
+        try:
+            return self.ensemble_recommendations(user_id=user_id, context={}, n_recommendations=limit)
+        except Exception as exc:
+            self.logger.error(f"Error generating personalized recommendations: {exc}")
+            return []
